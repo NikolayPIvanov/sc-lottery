@@ -9,6 +9,7 @@ import {VRFV2PlusClient} from "@chainlink/contracts/vrf/dev/libraries/VRFV2PlusC
  */
 error Raffle__NotEnoughETH();
 error Raffle__NotEnoughTimeHasPassed();
+error Raffle__TransferFailed();
 
 // Subscription ID - 100381498082290660398290491552047882446158296234589323005390803302739260065256
 
@@ -43,9 +44,11 @@ contract Raffle is VRFConsumerBaseV2Plus {
 
     address payable[] private s_players;
     uint256 private s_lastTimestamp;
+    address private s_recentWinner;
 
     /* Events */
     event RaffleEnter(address indexed player);
+    event WinnerPicked(address indexed player);
 
     constructor(
         uint256 _entranceFee,
@@ -99,12 +102,26 @@ contract Raffle is VRFConsumerBaseV2Plus {
         s_lastTimestamp = block.timestamp;
     }
 
+    function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal virtual override {
+        uint256 indexOfWinner = randomWords[0] % s_players.length;
+        address payable recentWinner = s_players[indexOfWinner];
+
+        s_recentWinner = recentWinner;
+        s_players = new address payable[](0);
+        s_lastTimestamp = block.timestamp;
+
+        emit WinnerPicked(recentWinner);
+
+        (bool success,) = recentWinner.call{value: address(this).balance}("");
+        if (!success) {
+            revert Raffle__TransferFailed();
+        }
+    }
+
     /**
      * Getters
      */
     function getEntranceFee() public view returns (uint256) {
         return i_entranceFee;
     }
-
-    function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal virtual override {}
 }
