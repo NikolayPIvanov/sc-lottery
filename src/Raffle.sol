@@ -10,6 +10,7 @@ import {VRFV2PlusClient} from "@chainlink/contracts/vrf/dev/libraries/VRFV2PlusC
 error Raffle__NotEnoughETH();
 error Raffle__NotEnoughTimeHasPassed();
 error Raffle__TransferFailed();
+error Raffle__RaffleNotOpen();
 
 // Subscription ID - 100381498082290660398290491552047882446158296234589323005390803302739260065256
 
@@ -20,6 +21,14 @@ error Raffle__TransferFailed();
  * @dev Implements Chainlink VRFv2.5
  */
 contract Raffle is VRFConsumerBaseV2Plus {
+    /**
+     * Type Declarations
+     */
+    enum RaffleState {
+        OPEN,
+        CALCULATING
+    }
+
     // The default is 3, but you can set this higher.
     uint16 private constant REQUEST_CONFIRMATIONS = 3;
 
@@ -45,6 +54,7 @@ contract Raffle is VRFConsumerBaseV2Plus {
     address payable[] private s_players;
     uint256 private s_lastTimestamp;
     address private s_recentWinner;
+    RaffleState private s_state;
 
     /* Events */
     event RaffleEnter(address indexed player);
@@ -69,20 +79,24 @@ contract Raffle is VRFConsumerBaseV2Plus {
 
     function enterRaffle() external payable {
         if (msg.value < i_entranceFee) revert Raffle__NotEnoughETH();
+        if (s_state != RaffleState.OPEN) revert Raffle__RaffleNotOpen();
 
         s_players.push(payable(msg.sender));
 
         emit RaffleEnter(msg.sender);
     }
 
-    // 1. Get random number
-    // 2. Use random number to pick a player
-    // 3. Be automatically called
+    // CEI (Checks, Effects, Interactions)
     function pickWinner() public {
+        // Checks
         // Check the interval
-        if (block.timestamp - s_lastTimestamp > i_interval) {
-            revert Raffle__NotEnoughTimeHasPassed();
-        }
+        if (block.timestamp - s_lastTimestamp > i_interval) revert Raffle__NotEnoughTimeHasPassed();
+        if (s_state != RaffleState.OPEN) revert Raffle__RaffleNotOpen();
+
+        // Effects
+        s_state = RaffleState.CALCULATING;
+        // Is there a chance that this will bug the contract? If we do not get a fallback call?
+        s_lastTimestamp = block.timestamp;
 
         // Request random number
         VRFV2PlusClient.RandomWordsRequest memory request = VRFV2PlusClient.RandomWordsRequest({
@@ -97,9 +111,8 @@ contract Raffle is VRFConsumerBaseV2Plus {
             )
         });
 
+        // Interactions
         uint256 requestId = s_vrfCoordinator.requestRandomWords(request);
-
-        s_lastTimestamp = block.timestamp;
     }
 
     function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal virtual override {
@@ -109,6 +122,7 @@ contract Raffle is VRFConsumerBaseV2Plus {
         s_recentWinner = recentWinner;
         s_players = new address payable[](0);
         s_lastTimestamp = block.timestamp;
+        s_state = RaffleState.OPEN;
 
         emit WinnerPicked(recentWinner);
 
