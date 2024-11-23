@@ -2,6 +2,11 @@
 pragma solidity 0.8.19;
 
 /**
+ * Errors
+ */
+error Raffle__NotEnoughETH();
+
+/**
  * @title Raffle
  * @author Nikolay P. Ivanov
  * @notice This contract is for creating a raffle.
@@ -14,7 +19,10 @@ contract Raffle {
         i_entranceFee = _entranceFee;
     }
 
-    function enterRaffle() public payable {}
+    function enterRaffle() public payable {
+        if (msg.value < i_entranceFee) revert Raffle__NotEnoughETH();
+    }
+
     function pickWinner() public {}
 
     /**
